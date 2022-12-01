@@ -34,7 +34,25 @@
  * @access public
  * @memberof UsersController
  */
-const models = require('../models/index');
+const jwt = require('jsonwebtoken')
+const {User} = require('../models/index')
+const config = require('../config/config')
+const bcrypt = require('../bcrypt/crypt')
+/**
+ * 
+ * @param {*} id 
+ * @returns jwt //token
+ * @example 
+ * function jwtSingUser('63866e5de61b7deb4e54a38e')
+ * => return eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjYzODY2ZTVkZTYxYjdkZWI0ZTU0YTM4ZSIsImlhdCI6MTY2OTkxMzk0OCwiZXhwIjoxNjcwNTE4NzQ4fQ.5ykJHoeQtY8V7Le8SZfs30Rwm1d3s8tOZ-twGW9edr0
+ */
+function jwtSingUser(id) {
+    const ONE_WEEK = 60 * 60 * 24 * 7
+    return jwt.sign({ id, ONE_WEEK}, config.authentication.jwtSecret, {
+        expiresIn: ONE_WEEK
+    })
+}
+
 module.exports = {
     /**
      * @method register
@@ -53,38 +71,59 @@ module.exports = {
      */
     async register(req, res) {
         try {
-            /**
-              * @access private
-              * @memberof UsersController
-              * @param {String} name
-              * @param {String} password
-             */
-            const { name, password } = req.body
-            user = new models.User({ name: name, password: password })
+            const { password, email } = req.body
+            //hash = bcrypt.hash_pas(password);
+            user = new User({ password: password, email: email })
             const s_req = await user.save();
+            res.send({
+                s_req
+            })
             res.send(s_req)
         } catch (err) {
             res.status(400).send({
-                error: "Ошибка регичтрации!!!"
+                error: "Ошибка региcтрации!!!"
             });
             console.log(err)
         }
     },
-    /**
-     * @method find_all
-     * @access public
-     * @memberof UsersController
-     * @param {*} req - Объект представляет HTTP-запрос
-     * @param {*} res - Объект представляет HTTP-ответ
-     * @example 
-     * //находит всех с одним именем
-     * async find_all({"body":{"name":"Виктор"}}, res){
-     * const find_req = await (models.User.find({ name: req.body.name }));
-     *      res.send(find_req)//завершаем ответом клиенту и возвращаем всех с именем Виктор:
-     * {"_id":"6383945148008402d02cec0c","name":"Виктор","password":"123456"},
-     * {"_id":"6383945148008402d02cec1b","name":"Виктор","password":"993456"}
-     * }
-     */
+    async login(req, res) {
+        try {
+            const {email, password} = req.body
+            var i = await User.getAuthenticated(email, password, function (err, user, reason) {
+                if (err) throw err;
+            
+                // вход в систему прошел успешно, если у нас есть пользователь
+                if (user) {
+                    // обрабатываем успешный вход в систему
+                    res.send({
+                        email:user.email,   
+                        token: jwtSingUser(user._id)
+                    })
+                    console.log('login success');
+                    return;
+                }
+            
+                // в противном случае мы можем определить, почему мы потерпели неудачу
+                var reasons = User.failedLogin;
+                switch (reason) {
+                    case reasons.NOT_FOUND:
+                    case reasons.PASSWORD_INCORRECT:
+                        // note: these cases are usually treated the same - don't tell
+                        // the user *why* the login failed, only that it did
+                        break;
+                    case reasons.MAX_ATTEMPTS:
+                        // send email or otherwise notify user that account is
+                        // temporarily lockedфф
+                        break;
+                }
+            });
+        } catch (err) {
+            res.status(400).send({
+                error: "Ошибка сценария авторизации!!!"
+            });
+            console.log(err)
+        }
+    },
     async find_all(req, res) {
         /**
           * @access private
@@ -92,7 +131,8 @@ module.exports = {
           * @param {String} find_req
          */
         try {
-            const find_req = await (models.User.find({ name: req.body.name }));
+            const find_req = await (User.find({ name: req.body.name }));
+            console.log(req.user)
             res.send(find_req)
         } catch (err) {
             res.status(400).send({
@@ -112,13 +152,13 @@ module.exports = {
      * async get_user({"body":{"id":"6383945148008402d02cec0c"}}, res){
      * const { id } = req.body;
      * const find_req = await (models.User.findById(id));
-     * res.send(find_req)//завершаем ответом клиенту {"_id":"6383945148008402d02cec0c","name":"Виктор","password":"123456"}
+     * res.send(find_req)//завершаем ответом клиенту {"_id":"6383945148008402d02cec0c","name":"Виктор","password":"123456","token":"jvt"}
      * }
      */
     async get_user(req, res) {
         try {
             const { id } = req.body;
-            const find_req = await (models.User.findById(id));
+            const find_req = await (User.findById(id));
             res.send(find_req)
         } catch (err) {
             res.status(400).send({
@@ -138,14 +178,14 @@ module.exports = {
  * async update_user({"body":{"id":"6383945148008402d02cec0c"}}, res){
  * const { id } = req.body;
  * const find_req = await (models.User.findById(id));
- * res.send(find_req)//завершаем ответом клиенту вохвращая найденного пользователя {"_id":"6383945148008402d02cec0c","name":"Виктор","password":"123456"}
+ * res.send(find_req)//завершаем ответом клиенту вохвращая найденного пользователя {"_id":"6383945148008402d02cec0c","name":"Виктор","password":"123456","token":"jvt"}
  * res.send(find_req)
  * }
  */
     async update_user(req, res) {
         try {
             const { id } = req.body
-            const find_req = await (models.User.findOneAndUpdate({ id }, req.body.update));
+            const find_req = await (User.findOneAndUpdate({ id }, req.body.update));
             res.send()
         } catch (err) {
             res.status(400).send({
@@ -161,7 +201,7 @@ module.exports = {
 * @param {*} req - Объект представляет HTTP-запрос
 * @param {*} res - Объект представляет HTTP-ответ
 * @example 
-* //находим пользователя по ID и обновляем его данные
+* //находим пользователя по ID и удаляем его данные
 * async delete_user({"body":{"id":"6383945148008402d02cec0c"}}, res){
 * const { id } = req.body;
 * const find_req = await (models.User.findById(id));
@@ -172,7 +212,7 @@ module.exports = {
     async delete_user(req, res) {
         try {
             const { id } = req.body;
-            const find_req = await (models.User.findOneAndDelete(id));
+            const find_req = await (User.findOneAndDelete(id));
             res.send(find_req)
         } catch (err) {
             res.status(400).send({
@@ -191,13 +231,13 @@ module.exports = {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="UsersController.html">UsersController</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Namespaces</h3><ul><li><a href="UsersController.html">UsersController</a></li></ul><h3>Global</h3><ul><li><a href="global.html#jwtSingUser">jwtSingUser</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.0</a> on Sun Nov 27 2022 23:12:13 GMT+0300 (Москва, стандартное время)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.0</a> on Fri Dec 02 2022 00:10:11 GMT+0300 (Москва, стандартное время)
 </footer>
 
 <script> prettyPrint(); </script>

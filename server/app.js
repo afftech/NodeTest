@@ -1,4 +1,12 @@
-
+/**
+ * app.js инициализирует объекты express,body-parser,config,cors,routes.
+ 
+ * @namespace app
+ */
+/**
+ * @access private
+ * @memberof UsersController
+ */
 const express = require('express');
 const bodyParser = require('body-parser');
 const app = express();
